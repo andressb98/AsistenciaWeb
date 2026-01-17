@@ -1,0 +1,553 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+
+// Enums principales del negocio (SQLite usa TEXT para enums)
+enum estado_activo {
+  ACTIVO
+  INACTIVO
+  SUSPENDIDO
+}
+
+enum tipo_telefono {
+  MOVIL
+  FIJO
+  EMERGENCIA
+}
+
+enum metodo_autenticacion {
+  QR
+  MANUAL
+  SISTEMA
+  PASSWORD
+  BIOMETRICO
+}
+
+enum dia_semana_enum {
+  DOMINGO
+  LUNES
+  MARTES
+  MIERCOLES
+  JUEVES
+  VIERNES
+  SABADO
+}
+
+enum prioridad {
+  BAJA
+  MEDIA
+  ALTA
+  CRITICA
+}
+
+enum estatus_sincronizacion {
+  PENDIENTE
+  SINCRONIZADO
+  ERROR
+  REQUIERE_ATENCION
+}
+
+enum tipo_nota_empleado {
+  VACACIONES
+  MEDICA
+  DISCIPLINARIA
+  RENUNCIA
+  OTRO
+}
+
+enum motivo_descanso {
+  PROGRAMADO
+  EMERGENCIA
+  FESTIVO
+  VACACIONES
+  PERSONAL
+}
+
+enum tipo_accion_log {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  VIEW
+}
+
+enum severidad_log {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+enum tipo_imagen {
+  JPG
+  PNG
+  SVG
+  WEBP
+}
+
+enum estatus_alerta {
+  PENDIENTE
+  ENVIADA
+  LEIDA
+  IGNORADA
+  RESUELTA
+}
+
+// Enums originales
+enum asistencia_fuente {
+  QR
+  MANUAL
+  SISTEMA
+}
+
+enum asistencia_tipo {
+  ENTRADA
+  SALIDA
+  OTRO
+}
+
+enum aviso_estado {
+  PENDIENTE
+  APROBADO
+  RECHAZADO
+}
+
+enum aviso_tipo {
+  NO_ASISTIRA
+  PERMISO
+  LLEGARA_TARDE
+  OTRO
+}
+
+enum descanso_estado {
+  PROGRAMADO
+  CONFIRMADO
+  CANCELADO
+}
+
+enum descanso_origen {
+  AUTOMATICO
+  MANUAL
+}
+
+enum falta_origen {
+  SISTEMA
+  EMPLEADO
+  GERENTE
+  OWNER
+}
+
+enum falta_tipo {
+  FALTA
+  DESCANSO
+  PERMISO
+  INCAPACIDAD
+}
+
+enum regla_alerta_tipo_enum {
+  FALTAS_EN_INTERVALO
+  RACHA_SIN_FALTA
+  RETARDOS_EN_INTERVALO
+  FALTAS_NO_JUSTIFICADAS_EN_INTERVALOS
+  SIN_ASISTENCIA_EN_DIA_CLAVE
+}
+
+enum suscripcion_estado {
+  ACTIVA
+  PAUSADA
+  CANCELADA
+  PRUEBA
+  VENCIDA
+}
+
+enum suscripcion_origen {
+  MANUAL
+  SISTEMA
+  API
+}
+
+enum tipo_descanso {
+  FIJO
+  VARIABLE
+  MIXTO
+}
+
+// Modelos
+model asistencia {
+  id             Int               @id @default(autoincrement())
+  empleado_id    Int
+  sucursal_id    Int
+  fecha_hora     DateTime
+  tipo           asistencia_tipo
+  fuente         asistencia_fuente
+  comentario     String?
+  justificada    Boolean           @default(false)
+  creado_en      DateTime          @default(now())
+  actualizado_en DateTime          @updatedAt
+
+  empleado empleado @relation(fields: [empleado_id], references: [id])
+  sucursal sucursal @relation(fields: [sucursal_id], references: [id])
+
+  @@index([empleado_id, fecha_hora])
+  @@index([sucursal_id, fecha_hora])
+}
+
+model categoria_dia_descanso {
+  id             Int             @id @default(autoincrement())
+  categoria_id   Int
+  dia_semana     dia_semana_enum
+  creado_en      DateTime        @default(now())
+  actualizado_en DateTime        @updatedAt
+
+  categoria_puesto categoria_puesto @relation(fields: [categoria_id], references: [id])
+
+  @@unique([categoria_id, dia_semana])
+  @@index([categoria_id])
+}
+
+model categoria_puesto {
+  id                     Int           @id @default(autoincrement())
+  sucursal_id            Int
+  nombre                 String
+  descripcion            String?
+  tipo_descanso          tipo_descanso
+  misma_fecha_para_todos Boolean       @default(false)
+  semana_inicio_dia      Int           @default(0)
+  semana_fin_dia         Int           @default(6)
+  hora_entrada           Int
+  hora_salida            Int
+  tolerancia_retraso_min Int           @default(5)
+  activo                 estado_activo @default(ACTIVO)
+  creado_en              DateTime      @default(now())
+  actualizado_en         DateTime      @updatedAt
+
+  sucursal      sucursal                 @relation(fields: [sucursal_id], references: [id])
+  dias_descanso categoria_dia_descanso[]
+  empleados     empleado[]
+
+  @@index([sucursal_id, activo])
+}
+
+model descanso_programado {
+  id             Int             @id @default(autoincrement())
+  empleado_id    Int
+  sucursal_id    Int
+  creado_por     Int
+  fecha          DateTime
+  origen         descanso_origen
+  estado         descanso_estado @default(PROGRAMADO)
+  comentario     String?
+  creado_en      DateTime        @default(now())
+  actualizado_en DateTime        @updatedAt
+
+  empleado empleado @relation(fields: [empleado_id], references: [id])
+  sucursal sucursal @relation(fields: [sucursal_id], references: [id])
+  creador  usuario  @relation("creador_descanso", fields: [creado_por], references: [id])
+
+  @@index([empleado_id, fecha])
+  @@index([sucursal_id, fecha])
+}
+
+model empleado {
+  id                          Int           @id @default(autoincrement())
+  sucursal_id                 Int
+  categoria_id                Int
+  nombre                      String
+  apellido                    String
+  correo                      String        @unique
+  codigo_qr                   String        @unique
+  estado                      estado_activo @default(ACTIVO)
+  fecha_alta                  DateTime      @default(now())
+  fecha_baja                  DateTime?
+  dias_descanso_personalizado Int?
+  notas                       String?
+  creado_en                   DateTime      @default(now())
+  actualizado_en              DateTime      @updatedAt
+
+  sucursal    sucursal              @relation(fields: [sucursal_id], references: [id])
+  categoria   categoria_puesto      @relation(fields: [categoria_id], references: [id])
+  asistencias asistencia[]
+  descansos   descanso_programado[]
+  faltas      falta[]
+  alertas     alerta_empleado[]
+  telefonos   telefono_empleado[]
+
+  @@index([sucursal_id, estado])
+  @@index([categoria_id])
+  @@index([correo])
+}
+
+model empresa {
+  id               Int                @id @default(autoincrement())
+  dueno_usuario_id Int
+  nombre_comercial String
+  razon_social     String?
+  rfc              String?
+  estado           suscripcion_estado @default(PRUEBA)
+  activa           Boolean            @default(true)
+  creado_en        DateTime           @default(now())
+  actualizado_en   DateTime           @updatedAt
+
+  dueno usuario @relation("propietario", fields: [dueno_usuario_id], references: [id])
+
+  sucursales    sucursal[]
+  bitacoras     bitacora[]
+  suscripciones suscripcion[]
+
+  @@index([dueno_usuario_id])
+  @@index([activa])
+  @@index([estado])
+}
+
+model falta {
+  id             Int          @id @default(autoincrement())
+  empleado_id    Int
+  sucursal_id    Int
+  validado_por   Int?
+  fecha          DateTime
+  tipo           falta_tipo
+  origen         falta_origen
+  justificada    Boolean      @default(false)
+  comentario     String?
+  validada_en    DateTime?
+  creado_en      DateTime     @default(now())
+  actualizado_en DateTime     @updatedAt
+
+  empleado  empleado @relation(fields: [empleado_id], references: [id])
+  sucursal  sucursal @relation(fields: [sucursal_id], references: [id])
+  validador usuario? @relation("validador_falta", fields: [validado_por], references: [id])
+
+  @@index([empleado_id, fecha])
+  @@index([sucursal_id, fecha])
+  @@index([tipo])
+}
+
+model permiso {
+  id             Int      @id @default(autoincrement())
+  codigo         String   @unique
+  descripcion    String?
+  activo         Boolean  @default(true)
+  creado_en      DateTime @default(now())
+  actualizado_en DateTime @updatedAt
+
+  roles rol_permiso[]
+}
+
+model rol {
+  id             Int      @id @default(autoincrement())
+  codigo         String   @unique
+  nombre         String
+  descripcion    String?
+  activo         Boolean  @default(true)
+  creado_en      DateTime @default(now())
+  actualizado_en DateTime @updatedAt
+
+  permisos rol_permiso[]
+  usuarios usuario_rol_sucursal[]
+}
+
+model rol_permiso {
+  id             Int      @id @default(autoincrement())
+  rol_id         Int
+  permiso_id     Int
+  creado_en      DateTime @default(now())
+  actualizado_en DateTime @updatedAt
+
+  rol     rol     @relation(fields: [rol_id], references: [id])
+  permiso permiso @relation(fields: [permiso_id], references: [id])
+
+  @@unique([rol_id, permiso_id])
+  @@index([rol_id])
+  @@index([permiso_id])
+}
+
+model regla_alerta {
+  id             Int                    @id @default(autoincrement())
+  sucursal_id    Int
+  creado_por     Int
+  nombre         String
+  tipo           regla_alerta_tipo_enum
+  intervalo      Int                    @default(7)
+  umbral         Int                    @default(3)
+  dia_clave      dia_semana_enum?
+  activo         Boolean                @default(true)
+  creado_en      DateTime               @default(now())
+  actualizado_en DateTime               @updatedAt
+
+  sucursal sucursal          @relation(fields: [sucursal_id], references: [id])
+  creador  usuario           @relation("creador_regla", fields: [creado_por], references: [id])
+  alertas  alerta_empleado[]
+
+  @@index([sucursal_id, activo])
+  @@index([tipo])
+}
+
+model sucursal {
+  id             Int          @id @default(autoincrement())
+  empresa_id     Int // ✅ ELIMINADO @unique
+  nombre         String
+  direccion      String?
+  telefono       String?
+  logo           String?
+  tipo_logo      tipo_imagen?
+  activa         Boolean      @default(true)
+  creado_en      DateTime     @default(now())
+  actualizado_en DateTime     @updatedAt
+
+  empresa          empresa                @relation(fields: [empresa_id], references: [id])
+  categorias       categoria_puesto[]
+  empleados        empleado[]
+  asistencias      asistencia[]
+  descansos        descanso_programado[]
+  faltas           falta[]
+  alertas          alerta_empleado[]
+  reglas           regla_alerta[]
+  bitacoras        bitacora[]
+  rolesPorSucursal usuario_rol_sucursal[]
+
+  @@index([empresa_id]) // ✅ NUEVO índice para relación 1:N
+  @@index([activa])
+}
+
+model suscripcion {
+  id             Int                @id @default(autoincrement())
+  empresa_id     Int
+  plan_id        Int
+  estado         suscripcion_estado @default(PRUEBA)
+  fecha_inicio   DateTime           @default(now())
+  fecha_fin      DateTime?
+  origen         suscripcion_origen @default(SISTEMA)
+  notas          String?
+  creado_en      DateTime           @default(now())
+  actualizado_en DateTime           @updatedAt
+
+  empresa empresa @relation(fields: [empresa_id], references: [id])
+  plan    plan    @relation(fields: [plan_id], references: [id])
+
+  @@index([empresa_id, estado])
+  @@index([plan_id])
+}
+
+model telefono_empleado {
+  id             Int           @id @default(autoincrement())
+  empleado_id    Int
+  tipo           tipo_telefono
+  numero         String
+  es_principal   Boolean       @default(false)
+  creado_en      DateTime      @default(now())
+  actualizado_en DateTime      @updatedAt
+
+  empleado empleado @relation(fields: [empleado_id], references: [id])
+
+  @@unique([empleado_id, tipo, numero])
+  @@index([empleado_id])
+}
+
+model usuario {
+  id                Int                    @id @default(autoincrement())
+  nombre            String
+  correo            String                 @unique
+  password_hash     String
+  activo            Boolean                @default(true)
+  creado_en         DateTime               @default(now())
+  actualizado_en    DateTime               @updatedAt
+  empresas_propias  empresa[]              @relation("propietario")
+  alertas_leidas    alerta_empleado[]      @relation("lector_alerta")
+  descansos_creados descanso_programado[]  @relation("creador_descanso")
+  reglas_creadas    regla_alerta[]         @relation("creador_regla")
+  faltas_validadas  falta[]                @relation("validador_falta")
+  bitacoras         bitacora[]
+  rolesPorSucursal  usuario_rol_sucursal[]
+
+  @@index([activo])
+  @@index([correo])
+}
+
+model usuario_rol_sucursal {
+  id             Int      @id @default(autoincrement())
+  usuario_id     Int
+  sucursal_id    Int
+  rol_id         Int
+  codigo         String   @unique
+  creado_en      DateTime @default(now())
+  actualizado_en DateTime @updatedAt
+
+  usuario  usuario  @relation(fields: [usuario_id], references: [id])
+  sucursal sucursal @relation(fields: [sucursal_id], references: [id])
+  rol      rol      @relation(fields: [rol_id], references: [id])
+
+  @@unique([usuario_id, sucursal_id, rol_id])
+  @@index([sucursal_id])
+}
+
+// Tablas de sistema
+model alerta_empleado {
+  id             Int            @id @default(autoincrement())
+  regla_id       Int
+  empleado_id    Int
+  sucursal_id    Int
+  leida_por      Int?
+  generado_en    DateTime       @default(now())
+  datos_calculo  Json?
+  leida_en       DateTime?
+  estado         estatus_alerta @default(PENDIENTE)
+  creado_en      DateTime       @default(now())
+  actualizado_en DateTime       @updatedAt
+
+  regla    regla_alerta @relation(fields: [regla_id], references: [id])
+  empleado empleado     @relation(fields: [empleado_id], references: [id])
+  sucursal sucursal     @relation(fields: [sucursal_id], references: [id])
+  lector   usuario?     @relation("lector_alerta", fields: [leida_por], references: [id])
+
+  @@index([empleado_id, estado])
+  @@index([sucursal_id, generado_en])
+  @@index([leida_por])
+}
+
+model bitacora {
+  id          Int             @id @default(autoincrement())
+  empresa_id  Int?
+  sucursal_id Int?
+  usuario_id  Int?
+  accion      tipo_accion_log
+  detalle     String?
+  severidad   severidad_log   @default(INFO)
+  creado_en   DateTime        @default(now())
+
+  empresa  empresa?  @relation(fields: [empresa_id], references: [id])
+  sucursal sucursal? @relation(fields: [sucursal_id], references: [id])
+  usuario  usuario?  @relation(fields: [usuario_id], references: [id])
+
+  @@index([empresa_id, creado_en])
+  @@index([sucursal_id, creado_en])
+  @@index([usuario_id])
+}
+
+model plan {
+  id                         Int      @id @default(autoincrement())
+  codigo                     String   @unique
+  nombre                     String
+  descripcion                String?
+  max_sucursales_por_empresa Int      @default(1)
+  max_categoria_por_sucursal Int      @default(5)
+  max_empleados_por_sucursal Int      @default(10)
+  max_gerentes_por_sucursal  Int      @default(1)
+  incluye_alertas            Boolean  @default(false)
+  incluye_portal_empleado    Boolean  @default(false)
+  limite_historial_meses     Int      @default(3)
+  activo                     Boolean  @default(true)
+  creado_en                  DateTime @default(now())
+  actualizado_en             DateTime @updatedAt
+
+  suscripciones suscripcion[]
+
+  @@index([activo])
+}
